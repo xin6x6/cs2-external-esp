@@ -14,7 +14,7 @@ WNDCLASSEX Window::wc = { };
 extern LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace {
-	constexpr COLORREF kCompatibilityTransparencyKey = RGB(255, 0, 255);
+	constexpr COLORREF kCompatibilityTransparencyKey = RGB(0, 0, 0);
 
 	bool IsWineRuntime()
 	{
@@ -203,6 +203,13 @@ bool Window::CreateImGui()
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
 
+	if (use_compatibility_transparency) {
+		ImGuiStyle& style = ImGui::GetStyle();
+		style.AntiAliasedFill = false;
+		style.AntiAliasedLines = false;
+		style.AntiAliasedLinesUseTex = false;
+	}
+
 	// Set the ImGui IO to the Win32 window
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.IniFilename = nullptr;
@@ -267,9 +274,9 @@ void Window::EndRender()
 
 	// Make a color that's clear / transparent
 	float color[4]{
-		use_compatibility_transparency ? 1.0f : 0.0f,
 		0.0f,
-		use_compatibility_transparency ? 1.0f : 0.0f,
+		0.0f,
+		0.0f,
 		0.0f
 	};
 
