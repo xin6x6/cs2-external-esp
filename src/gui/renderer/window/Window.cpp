@@ -6,11 +6,26 @@ IDXGISwapChain* Window::swap_chain = nullptr;
 ID3D11RenderTargetView* Window::render_targetview = nullptr;
 
 bool Window::vsync = false;
+bool Window::use_compatibility_transparency = false;
 HWND Window::hwnd = nullptr;
 HWND Window::viewport = nullptr;
 WNDCLASSEX Window::wc = { };
 
 extern LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM lParam);
+
+namespace {
+	constexpr COLORREF kCompatibilityTransparencyKey = RGB(255, 0, 255);
+
+	bool IsWineRuntime()
+	{
+		static const bool is_wine = []() {
+			auto* ntdll = GetModuleHandleA("ntdll.dll");
+			return ntdll != nullptr && GetProcAddress(ntdll, "wine_get_version") != nullptr;
+		}();
+
+		return is_wine;
+	}
+}
 
 bool Window::CreateDevice()
 {
@@ -132,7 +147,7 @@ bool Window::SpawnWindow()
 	int height = GetSystemMetrics(SM_CYSCREEN);
 
 	hwnd = CreateWindowEx(
-		WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW,
+		WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
 		"wa",
 		"wa",
 		WS_POPUP | WS_VISIBLE,
@@ -147,19 +162,30 @@ bool Window::SpawnWindow()
 		LOGF(FATAL, "Failed to create Window");
 		return false;
 	}
-	
-	if (!SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), BYTE(255), LWA_ALPHA)) {
+
+	use_compatibility_transparency = IsWineRuntime();
+
+	MARGINS margins = { -1 };
+	const HRESULT frame_result = DwmExtendFrameIntoClientArea(hwnd, &margins);
+	if (FAILED(frame_result))
+		use_compatibility_transparency = true;
+
+	if (use_compatibility_transparency) {
+		if (!SetLayeredWindowAttributes(hwnd, kCompatibilityTransparencyKey, 0, LWA_COLORKEY)) {
+			LOGF(FATAL, "Failed to set compatibility layered window attributes");
+			return false;
+		}
+
+		LOGF(INFO, "Using compatibility transparency path for Wine/CrossOver");
+	}
+	else if (!SetLayeredWindowAttributes(hwnd, 0, BYTE(255), LWA_ALPHA)) {
 		LOGF(FATAL, "Failed to set layered window attributes");
 		return false;
 	}
 
-	MARGINS margins = { -1 };
-	DwmExtendFrameIntoClientArea(hwnd, &margins);
-
 	// show + update window
-	ShowWindow(hwnd, SW_SHOW);
+	ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 	UpdateWindow(hwnd);
-	SetForeground(hwnd);
 
 	LOGF(VERBOSE, "Window Created with HWND {} dimensions {}w {}h", (uintptr_t)hwnd, width, height);
 	return true;
@@ -181,6 +207,8 @@ bool Window::CreateImGui()
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.IniFilename = nullptr;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	if (use_compatibility_transparency)
+		io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 	//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 	
 	io.IniFilename = nullptr; // Disable saving to .ini file
@@ -238,7 +266,12 @@ void Window::EndRender()
 	ImGui::Render();
 
 	// Make a color that's clear / transparent
-	float color[4]{ 0, 0, 0, 0 };
+	float color[4]{
+		use_compatibility_transparency ? 1.0f : 0.0f,
+		0.0f,
+		use_compatibility_transparency ? 1.0f : 0.0f,
+		0.0f
+	};
 
 	// Set the render target and then clear it
 	device_context->OMSetRenderTargets(1, &render_targetview, nullptr);
@@ -355,6 +388,8 @@ LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, LPARAM l
 		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu (imgui uses it in their example :shrug:)
 			return 0;
 		break;
+	case WM_MOUSEACTIVATE:
+		return MA_NOACTIVATE;
 	case WM_KEYUP:
 	{
 		bool toggle_key = wParam == VK_INSERT || wParam == VK_SHIFT && ((wParam >> 16) & 0xFF) == 0x36;

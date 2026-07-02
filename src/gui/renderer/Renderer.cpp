@@ -42,9 +42,6 @@ bool Renderer::InitImpl() {
     Esp::Init();
     Overlays::Init();
 
-    // Focus the game
-    SetForegroundWindow(Engine::GetProcess()->hwnd_);
-
     if (cfg::settings::streamproof)
         Window::SetAffinity(Window::hwnd, WindowAffinity::Invisible);
 
@@ -109,13 +106,6 @@ bool Renderer::HandleState() {
     if (should_toggle || pressed_end) { // Toggle when pressing end to trigger the config save :v
         this->isOpen = !isOpen;
 
-        // Release cursor when opening the menu
-        // Sometimes flashes the render as its handling the window order
-        if (this->isOpen)
-            SetForegroundWindow(Window::hwnd);
-        else
-            SetForegroundWindow(Engine::GetProcess()->hwnd_);
-
         Window::SetClickthrough(Window::hwnd, !this->isOpen);
         LOGF(VERBOSE, "Captured global VK_INSERT or VK_RSHIFT, toggling menu state to {}", this->isOpen);
 
@@ -151,7 +141,7 @@ bool Renderer::HandleWindowOrder() {
     }
 
     if (!overlay_visible && this->isFocused) {  
-        ShowWindow(Window::hwnd, SW_SHOW);
+        ShowWindow(Window::hwnd, SW_SHOWNOACTIVATE);
         overlay_visible = true;
         return true;
     }
