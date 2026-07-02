@@ -33,6 +33,7 @@ public:
 	static HWND hwnd;
 	static HWND viewport;
 	static WNDCLASSEX wc;
+	static bool IsWineRuntime();
 
 	static bool IsWindowInForeground(HWND window) { return GetForegroundWindow() == window; }
 	static bool BringToForeground(HWND window) { return SetForegroundWindow(window); }

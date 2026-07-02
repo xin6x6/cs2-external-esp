@@ -208,6 +208,7 @@
     <ClCompile Include="gui\frontend\esp\Esp.cpp" />
     <ClCompile Include="gui\frontend\menu\Menu.cpp" />
     <ClCompile Include="gui\frontend\overlays\Overlays.cpp" />
+    <ClCompile Include="gui\renderer\compat\CompatibilityRenderer.cpp" />
     <ClCompile Include="gui\renderer\Renderer.cpp" />
     <ClCompile Include="gui\renderer\window\Window.cpp" />
     <ClCompile Include="main.cpp" />
@@ -306,6 +307,7 @@
     <ClInclude Include="gui\frontend\esp\Esp.hpp" />
     <ClInclude Include="gui\frontend\menu\Menu.hpp" />
     <ClInclude Include="gui\frontend\overlays\Overlays.hpp" />
+    <ClInclude Include="gui\renderer\compat\CompatibilityRenderer.hpp" />
     <ClInclude Include="gui\renderer\Renderer.hpp" />
     <ClInclude Include="gui\renderer\window\Window.hpp" />
     <ClInclude Include="updater\http\HttpHelper.hpp" />

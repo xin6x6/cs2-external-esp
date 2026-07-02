@@ -1,4 +1,5 @@
 #include "Renderer.hpp"
+#include "compat/CompatibilityRenderer.hpp"
 #include "window/Window.hpp"
 
 #include "core/engine/Engine.hpp"
@@ -19,10 +20,37 @@ void Renderer::Destroy() {
 }   
 
 bool Renderer::IsOpen() {
+    if (GetInstance().compatibilityMode)
+        return CompatibilityRenderer::IsOpen();
+
     return GetInstance().isOpen;
 }
 
+bool Renderer::IsCompatibilityMode() {
+    return GetInstance().compatibilityMode;
+}
+
+bool Renderer::SupportsStreamproof() {
+    return !GetInstance().compatibilityMode;
+}
+
+void Renderer::SetVSync(bool enable) {
+    if (GetInstance().compatibilityMode) {
+        CompatibilityRenderer::SetVSync(enable);
+        return;
+    }
+
+    Window::SetVSync(enable);
+}
+
 bool Renderer::InitImpl() {
+    compatibilityMode = Window::IsWineRuntime();
+
+    if (compatibilityMode) {
+        LOGF(INFO, "Using CrossOver/Wine compatibility renderer");
+        return CompatibilityRenderer::Init();
+    }
+
     if (!Window::SpawnWindow()) {
         LOGF(FATAL, "Failed to create window");
         return false;
@@ -45,8 +73,7 @@ bool Renderer::InitImpl() {
     if (cfg::settings::streamproof)
         Window::SetAffinity(Window::hwnd, WindowAffinity::Invisible);
 
-    if (cfg::settings::vsync)
-        Window::vsync = true;
+    Window::SetVSync(cfg::settings::vsync);
 
     // We want the main thread to call render
     // And lock it
@@ -57,11 +84,21 @@ bool Renderer::InitImpl() {
 }
 
 void Renderer::DestroyImpl() {
+    if (compatibilityMode) {
+        CompatibilityRenderer::Destroy();
+        return;
+    }
+
     isRunning = false; // Prepare to stop thread loop
     LOGF(VERBOSE, "Successfully programed renderer destruction...");
 }
 
 void Renderer::ThreadImpl() {
+    if (compatibilityMode) {
+        CompatibilityRenderer::Thread();
+        return;
+    }
+
     while (isRunning) {
         Render();
 
@@ -103,7 +140,7 @@ bool Renderer::HandleState() {
 
     bool should_toggle = !was_holding && (pressed_insert || pressed_rshift);
 
-    if (should_toggle || pressed_end) { // Toggle when pressing end to trigger the config save :v
+    if (should_toggle) {
         this->isOpen = !isOpen;
 
         Window::SetClickthrough(Window::hwnd, !this->isOpen);

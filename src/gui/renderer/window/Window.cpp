@@ -16,7 +16,7 @@ extern LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wParam, L
 namespace {
 	constexpr COLORREF kCompatibilityTransparencyKey = RGB(0, 0, 0);
 
-	bool IsWineRuntime()
+	bool IsWineRuntimeImpl()
 	{
 		static const bool is_wine = []() {
 			auto* ntdll = GetModuleHandleA("ntdll.dll");
@@ -25,6 +25,11 @@ namespace {
 
 		return is_wine;
 	}
+}
+
+bool Window::IsWineRuntime()
+{
+	return IsWineRuntimeImpl();
 }
 
 bool Window::CreateDevice()
@@ -163,7 +168,7 @@ bool Window::SpawnWindow()
 		return false;
 	}
 
-	use_compatibility_transparency = IsWineRuntime();
+	use_compatibility_transparency = IsWineRuntimeImpl();
 
 	MARGINS margins = { -1 };
 	const HRESULT frame_result = DwmExtendFrameIntoClientArea(hwnd, &margins);

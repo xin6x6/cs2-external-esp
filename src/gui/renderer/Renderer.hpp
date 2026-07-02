@@ -13,6 +13,9 @@ public:
     static void Thread();
 
     static bool IsOpen();
+    static bool IsCompatibilityMode();
+    static bool SupportsStreamproof();
+    static void SetVSync(bool enable);
 private:
     Renderer() {};
 
@@ -32,6 +35,7 @@ private:
 private:
     bool isRunning = true;
     bool isOpen = false;
+    bool compatibilityMode = false;
 
     bool isFocused = false;
 };

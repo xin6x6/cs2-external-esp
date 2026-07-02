@@ -294,8 +294,16 @@ void Menu::RenderImpl() {
 					ImGui::Text("Misc");
 					ImGui::Separator();
 
-					if (ImGui::Checkbox("Streamproof", &cfg::settings::streamproof))
-					{
+					const bool supports_streamproof = Renderer::SupportsStreamproof();
+					ImGui::BeginDisabled(!supports_streamproof);
+					const bool streamproof_changed = ImGui::Checkbox("Streamproof", &cfg::settings::streamproof);
+					ImGui::EndDisabled();
+
+					if (!supports_streamproof) {
+						cfg::settings::streamproof = false;
+						ImGui::SetItemTooltip("Unavailable in CrossOver compatibility mode");
+					}
+					else if (streamproof_changed) {
 						Window::SetAffinity(
 							Window::hwnd,
 							cfg::settings::streamproof ? WindowAffinity::Invisible : WindowAffinity::Disabled
@@ -305,7 +313,7 @@ void Menu::RenderImpl() {
 					ImGui::Checkbox("Watermark", &cfg::settings::watermark);
 
 					if (ImGui::Checkbox("VSync", &cfg::settings::vsync))
-						Window::vsync = cfg::settings::vsync;
+						Renderer::SetVSync(cfg::settings::vsync);
 
 					ImGui::Checkbox("Free CPU", &cfg::settings::free_cpu);
 					ImGui::SetItemTooltip("Let the CPU sleep to Free Resources\nNOTE: might cause performance issues in lower end computers!");
