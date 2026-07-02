@@ -38,6 +38,8 @@ namespace {
 		HDC buffer_dc = nullptr;
 		HBITMAP buffer_bitmap = nullptr;
 		HGDIOBJ old_bitmap = nullptr;
+		int x = 0;
+		int y = 0;
 		int width = 1;
 		int height = 1;
 		bool visible = true;
@@ -147,9 +149,24 @@ namespace {
 			if (!visible || !hwnd || !buffer_dc)
 				return;
 
-			HDC window_dc = GetDC(hwnd);
-			BitBlt(window_dc, 0, 0, width, height, buffer_dc, 0, 0, SRCCOPY);
-			ReleaseDC(hwnd, window_dc);
+			POINT dst{ x, y };
+			POINT src{ 0, 0 };
+			SIZE size{ width, height };
+			BLENDFUNCTION blend{};
+			blend.BlendOp = AC_SRC_OVER;
+			blend.SourceConstantAlpha = 255;
+
+			UpdateLayeredWindow(
+				hwnd,
+				nullptr,
+				&dst,
+				&size,
+				buffer_dc,
+				&src,
+				kOverlayTransparencyKey,
+				&blend,
+				ULW_COLORKEY
+			);
 		}
 
 		void SetVisible(bool state)
@@ -165,6 +182,8 @@ namespace {
 		{
 			const int new_width = static_cast<int>(std::max<LONG>(rect.right - rect.left, 1));
 			const int new_height = static_cast<int>(std::max<LONG>(rect.bottom - rect.top, 1));
+			x = rect.left;
+			y = rect.top;
 
 			if (!EnsureBuffer(new_width, new_height))
 				return false;
@@ -691,7 +710,12 @@ namespace {
 
 		void Tick()
 		{
+			using namespace std::chrono_literals;
+			constexpr auto frame_budget = 16ms;
+
 			while (running) {
+				const auto frame_start = std::chrono::steady_clock::now();
+
 				PumpMessages();
 
 				if (!running)
@@ -710,7 +734,10 @@ namespace {
 
 				RenderFrame();
 
-				if (cfg::settings::free_cpu)
+				const auto frame_elapsed = std::chrono::steady_clock::now() - frame_start;
+				if (frame_elapsed < frame_budget)
+					std::this_thread::sleep_for(frame_budget - frame_elapsed);
+				else if (cfg::settings::free_cpu)
 					std::this_thread::sleep_for(1ms);
 			}
 
@@ -723,7 +750,10 @@ namespace {
 			static bool was_ending = false;
 
 			const bool pressed_insert = (GetAsyncKeyState(VK_INSERT) & 0x8000) != 0;
-			const bool pressed_rshift = (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+			const bool pressed_lshift = (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0;
+			const bool pressed_rshift_raw = (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+			const bool pressed_shift_generic = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+			const bool pressed_rshift = pressed_rshift_raw || (pressed_shift_generic && !pressed_lshift);
 			const bool pressed_end = (GetAsyncKeyState(VK_END) & 0x8000) != 0;
 
 			const bool should_toggle = !was_holding && (pressed_insert || pressed_rshift);
