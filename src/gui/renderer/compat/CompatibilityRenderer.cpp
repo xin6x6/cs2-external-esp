@@ -11,6 +11,8 @@
 #include <imgui/backends/imgui_impl_dx11.h>
 #include <imgui/backends/imgui_impl_win32.h>
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 namespace {
 	constexpr COLORREF kOverlayTransparencyKey = RGB(255, 0, 255);
 	constexpr char kOverlayClassName[] = "cs2esp_compat_overlay";
@@ -161,8 +163,8 @@ namespace {
 
 		bool SetBounds(const RECT& rect)
 		{
-			const int new_width = std::max(rect.right - rect.left, 1L);
-			const int new_height = std::max(rect.bottom - rect.top, 1L);
+			const int new_width = static_cast<int>(std::max<LONG>(rect.right - rect.left, 1));
+			const int new_height = static_cast<int>(std::max<LONG>(rect.bottom - rect.top, 1));
 
 			if (!EnsureBuffer(new_width, new_height))
 				return false;
@@ -743,7 +745,7 @@ namespace {
 
 		bool HandleWindowOrder()
 		{
-			auto* process = Engine::GetProcess();
+			auto process = Engine::GetProcess();
 			if (!process || (!process->hwnd_ && !process->UpdateHWND()))
 				return false;
 
@@ -1132,7 +1134,7 @@ namespace {
 
 			for (const auto& line : lines) {
 				const SIZE line_size = MeasureText(hdc, line, 11);
-				width = std::max(width, line_size.cx + 16);
+				width = std::max<int>(width, line_size.cx + 16);
 				height += line_size.cy + 4;
 			}
 
