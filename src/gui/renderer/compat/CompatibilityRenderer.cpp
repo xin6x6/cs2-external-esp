@@ -681,6 +681,7 @@ namespace {
 
 			menu.SetVSync(cfg::settings::vsync);
 			ResizeVelocityBuffer();
+			SetOpen(true);
 			return true;
 		}
 
@@ -732,7 +733,11 @@ namespace {
 
 				HandleState();
 
-				if (!HandleWindowOrder()) {
+				const bool overlay_ready = HandleWindowOrder();
+				if (!overlay_ready) {
+					if (open)
+						menu.Render();
+
 					if (cfg::settings::free_cpu)
 						std::this_thread::sleep_for(10ms);
 					continue;
@@ -756,13 +761,15 @@ namespace {
 			static bool was_ending = false;
 
 			const bool pressed_insert = (GetAsyncKeyState(VK_INSERT) & 0x8000) != 0;
+			const bool pressed_home = (GetAsyncKeyState(VK_HOME) & 0x8000) != 0;
+			const bool pressed_f2 = (GetAsyncKeyState(VK_F2) & 0x8000) != 0;
 			const bool pressed_lshift = (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0;
 			const bool pressed_rshift_raw = (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
 			const bool pressed_shift_generic = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 			const bool pressed_rshift = pressed_rshift_raw || (pressed_shift_generic && !pressed_lshift);
 			const bool pressed_end = (GetAsyncKeyState(VK_END) & 0x8000) != 0;
 
-			const bool should_toggle = !was_holding && (pressed_insert || pressed_rshift);
+			const bool should_toggle = !was_holding && (pressed_insert || pressed_rshift || pressed_home || pressed_f2);
 			const bool should_end = !was_ending && pressed_end;
 
 			if (should_toggle) {
@@ -775,7 +782,7 @@ namespace {
 				std::thread(Config::Write).detach();
 			}
 
-			was_holding = pressed_insert || pressed_rshift;
+			was_holding = pressed_insert || pressed_rshift || pressed_home || pressed_f2;
 			was_ending = pressed_end;
 		}
 
