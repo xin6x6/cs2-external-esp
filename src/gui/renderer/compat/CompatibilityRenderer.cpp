@@ -14,7 +14,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace {
-	constexpr COLORREF kOverlayTransparencyKey = RGB(255, 0, 255);
+	constexpr COLORREF kOverlayTransparencyKey = RGB(1, 2, 3);
 	constexpr char kOverlayClassName[] = "cs2esp_compat_overlay";
 	constexpr char kMenuClassName[] = "cs2esp_compat_menu";
 
@@ -705,38 +705,13 @@ namespace {
 			DeleteObject(brush);
 		}
 
-		void DrawFilledCircle(HDC hdc, int x, int y, int radius, COLORREF fill, COLORREF border)
-		{
-			HPEN pen = CreatePen(PS_SOLID, 1, border);
-			HBRUSH brush = CreateSolidBrush(fill);
-			HGDIOBJ old_pen = SelectObject(hdc, pen);
-			HGDIOBJ old_brush = SelectObject(hdc, brush);
-			Ellipse(hdc, x - radius, y - radius, x + radius, y + radius);
-			SelectObject(hdc, old_pen);
-			SelectObject(hdc, old_brush);
-			DeleteObject(pen);
-			DeleteObject(brush);
-		}
-
-		void DrawCircle(HDC hdc, int x, int y, int radius, COLORREF border)
-		{
-			HPEN pen = CreatePen(PS_SOLID, 1, border);
-			HBRUSH brush = static_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
-			HGDIOBJ old_pen = SelectObject(hdc, pen);
-			HGDIOBJ old_brush = SelectObject(hdc, brush);
-			Ellipse(hdc, x - radius, y - radius, x + radius, y + radius);
-			SelectObject(hdc, old_pen);
-			SelectObject(hdc, old_brush);
-			DeleteObject(pen);
-		}
-
 		void DrawPanel(HDC hdc, int x, int y, int width, int height, COLORREF fill, COLORREF border)
 		{
 			HPEN pen = CreatePen(PS_SOLID, 1, border);
 			HBRUSH brush = CreateSolidBrush(fill);
 			HGDIOBJ old_pen = SelectObject(hdc, pen);
 			HGDIOBJ old_brush = SelectObject(hdc, brush);
-			RoundRect(hdc, x, y, x + width, y + height, 10, 10);
+			Rectangle(hdc, x, y, x + width, y + height);
 			SelectObject(hdc, old_pen);
 			SelectObject(hdc, old_brush);
 			DeleteObject(pen);
@@ -809,7 +784,7 @@ namespace {
 		void Tick()
 		{
 			using namespace std::chrono_literals;
-			constexpr auto frame_budget = 16ms;
+			constexpr auto frame_budget = 33ms;
 
 			while (running) {
 				const auto frame_start = std::chrono::steady_clock::now();
@@ -879,6 +854,8 @@ namespace {
 
 		bool HandleWindowOrder()
 		{
+			static RECT last_bounds{ 0, 0, 0, 0 };
+
 			auto process = Engine::GetProcess();
 			if (!process)
 				return false;
@@ -932,6 +909,10 @@ namespace {
 				bottom_right.y
 			};
 
+			if (memcmp(&bounds, &last_bounds, sizeof(RECT)) == 0)
+				return true;
+
+			last_bounds = bounds;
 			return overlay.SetBounds(bounds);
 		}
 
@@ -1052,11 +1033,13 @@ namespace {
 				return;
 
 			const auto width = bounds.second.x - bounds.first.x;
-			DrawCircle(
+			const int radius = static_cast<int>(width / 6.0f);
+			DrawRect(
 				hdc,
-				static_cast<int>(head.x),
-				static_cast<int>(head.y),
-				static_cast<int>(width / 6.0f),
+				static_cast<int>(head.x) - radius,
+				static_cast<int>(head.y) - radius,
+				radius * 2,
+				radius * 2,
 				ToColorRef(mate ? cfg::esp::colors::tracker_team : cfg::esp::colors::tracker_enemy)
 			);
 		}
@@ -1383,10 +1366,9 @@ namespace {
 			const float radius = std::min(width, height) * 0.5f;
 
 			DrawPanel(hdc, x, y, width, height, RGB(18, 18, 18), RGB(70, 70, 70));
-			DrawCircle(hdc, static_cast<int>(cx), static_cast<int>(cy), static_cast<int>(radius * 0.333f), RGB(50, 50, 50));
-			DrawCircle(hdc, static_cast<int>(cx), static_cast<int>(cy), static_cast<int>(radius * 0.666f), RGB(50, 50, 50));
 			DrawLine(hdc, x + 4, static_cast<int>(cy), x + width - 4, static_cast<int>(cy), RGB(50, 50, 50));
 			DrawLine(hdc, static_cast<int>(cx), y + 4, static_cast<int>(cx), y + height - 4, RGB(50, 50, 50));
+			DrawRect(hdc, x + width / 6, y + height / 6, width * 2 / 3, height * 2 / 3, RGB(50, 50, 50));
 
 			for (const auto& player : snapshot.players) {
 				if (!player.alive || player.localplayer)
@@ -1424,17 +1406,19 @@ namespace {
 				}
 
 				const bool mate = player.team == local.team;
-				DrawFilledCircle(
+				FillRectColor(
 					hdc,
-					static_cast<int>(sx),
-					static_cast<int>(sy),
-					4,
-					mate ? RGB(0, 220, 80) : RGB(220, 50, 50),
-					RGB(0, 0, 0)
+					static_cast<int>(sx) - 3,
+					static_cast<int>(sy) - 3,
+					6,
+					6,
+					mate ? RGB(0, 220, 80) : RGB(220, 50, 50)
 				);
+				DrawRect(hdc, static_cast<int>(sx) - 3, static_cast<int>(sy) - 3, 6, 6, RGB(0, 0, 0));
 			}
 
-			DrawFilledCircle(hdc, static_cast<int>(cx), static_cast<int>(cy), 5, RGB(100, 180, 255), RGB(0, 0, 0));
+			FillRectColor(hdc, static_cast<int>(cx) - 4, static_cast<int>(cy) - 4, 8, 8, RGB(100, 180, 255));
+			DrawRect(hdc, static_cast<int>(cx) - 4, static_cast<int>(cy) - 4, 8, 8, RGB(0, 0, 0));
 			DrawText(hdc, x + 6, y + 4, "Radar", RGB(180, 180, 180), 11, true);
 		}
 
