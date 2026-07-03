@@ -72,9 +72,6 @@ namespace {
 			if (!hwnd)
 				return false;
 
-			if (!SetLayeredWindowAttributes(hwnd, kOverlayTransparencyKey, 0, LWA_COLORKEY))
-				return false;
-
 			ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 			UpdateWindow(hwnd);
 
@@ -104,9 +101,18 @@ namespace {
 
 			DestroyBuffer();
 
+			BITMAPINFO bmi{};
+			bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bmi.bmiHeader.biWidth = new_width;
+			bmi.bmiHeader.biHeight = -new_height; // top-down
+			bmi.bmiHeader.biPlanes = 1;
+			bmi.bmiHeader.biBitCount = 32;
+			bmi.bmiHeader.biCompression = BI_RGB;
+
+			void* bits = nullptr;
 			HDC screen_dc = GetDC(nullptr);
 			buffer_dc = CreateCompatibleDC(screen_dc);
-			buffer_bitmap = CreateCompatibleBitmap(screen_dc, new_width, new_height);
+			buffer_bitmap = CreateDIBSection(screen_dc, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
 			ReleaseDC(nullptr, screen_dc);
 
 			if (!buffer_dc || !buffer_bitmap)
