@@ -32,6 +32,73 @@ namespace {
 		return RGB(r, g, b);
 	}
 
+	struct WindowSearchContext {
+		DWORD pid = 0;
+		HWND best = nullptr;
+		LONG best_area = 0;
+	};
+
+	BOOL CALLBACK FindBestProcessWindowProc(HWND hwnd, LPARAM lParam)
+	{
+		auto& ctx = *reinterpret_cast<WindowSearchContext*>(lParam);
+
+		DWORD pid = 0;
+		GetWindowThreadProcessId(hwnd, &pid);
+		if (pid != ctx.pid || !IsWindowVisible(hwnd))
+			return TRUE;
+
+		if (GetWindow(hwnd, GW_OWNER) != nullptr)
+			return TRUE;
+
+		RECT rect{};
+		if (!GetWindowRect(hwnd, &rect))
+			return TRUE;
+
+		const LONG width = rect.right - rect.left;
+		const LONG height = rect.bottom - rect.top;
+		const LONG area = width * height;
+		if (width <= 0 || height <= 0 || area < ctx.best_area)
+			return TRUE;
+
+		ctx.best = hwnd;
+		ctx.best_area = area;
+		return TRUE;
+	}
+
+	HWND FindBestProcessWindow(DWORD pid, HWND current)
+	{
+		if (current && IsWindow(current) && IsWindowVisible(current)) {
+			RECT rect{};
+			if (GetWindowRect(current, &rect) && rect.right > rect.left && rect.bottom > rect.top)
+				return current;
+		}
+
+		WindowSearchContext ctx{};
+		ctx.pid = pid;
+		EnumWindows(FindBestProcessWindowProc, reinterpret_cast<LPARAM>(&ctx));
+		return ctx.best;
+	}
+
+	bool ForegroundBelongsToProcess(HWND foreground, DWORD pid)
+	{
+		if (!foreground)
+			return false;
+
+		DWORD foreground_pid = 0;
+		GetWindowThreadProcessId(foreground, &foreground_pid);
+		if (foreground_pid == pid)
+			return true;
+
+		HWND root = GetAncestor(foreground, GA_ROOTOWNER);
+		if (root && root != foreground) {
+			foreground_pid = 0;
+			GetWindowThreadProcessId(root, &foreground_pid);
+			return foreground_pid == pid;
+		}
+
+		return false;
+	}
+
 	struct GdiOverlayWindow {
 		HWND hwnd = nullptr;
 		WNDCLASSEXA wc{};
@@ -789,16 +856,23 @@ namespace {
 		bool HandleWindowOrder()
 		{
 			auto process = Engine::GetProcess();
-			if (!process || (!process->hwnd_ && !process->UpdateHWND()))
+			if (!process)
 				return false;
 
-			if (!IsWindow(process->hwnd_)) {
+			HWND game_window = FindBestProcessWindow(process->pid_, process->hwnd_);
+			if (!game_window && !process->UpdateHWND())
+				return false;
+
+			game_window = FindBestProcessWindow(process->pid_, process->hwnd_);
+			process->hwnd_ = game_window;
+
+			if (!game_window || !IsWindow(game_window)) {
 				running = false;
 				return false;
 			}
 
 			const HWND foreground = GetForegroundWindow();
-			focused = foreground == process->hwnd_
+			focused = ForegroundBelongsToProcess(foreground, process->pid_)
 				|| foreground == overlay.hwnd
 				|| (open && foreground == menu.Hwnd());
 
@@ -809,13 +883,20 @@ namespace {
 
 			RECT client_rect{};
 			RECT window_rect{};
-			if (!GetClientRect(process->hwnd_, &client_rect) || !GetWindowRect(process->hwnd_, &window_rect))
+			if (!GetClientRect(game_window, &client_rect) || !GetWindowRect(game_window, &window_rect))
 				return false;
 
 			POINT top_left{ client_rect.left, client_rect.top };
 			POINT bottom_right{ client_rect.right, client_rect.bottom };
-			ClientToScreen(process->hwnd_, &top_left);
-			ClientToScreen(process->hwnd_, &bottom_right);
+			ClientToScreen(game_window, &top_left);
+			ClientToScreen(game_window, &bottom_right);
+
+			if (bottom_right.x <= top_left.x || bottom_right.y <= top_left.y) {
+				top_left.x = window_rect.left;
+				top_left.y = window_rect.top;
+				bottom_right.x = window_rect.right;
+				bottom_right.y = window_rect.bottom;
+			}
 
 			RECT bounds{
 				top_left.x,
