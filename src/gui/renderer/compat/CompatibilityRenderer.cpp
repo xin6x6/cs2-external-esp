@@ -99,12 +99,34 @@ namespace {
 		return false;
 	}
 
+	bool IsFullscreenLike(HWND hwnd)
+	{
+		if (!hwnd)
+			return false;
+
+		RECT window_rect{};
+		if (!GetWindowRect(hwnd, &window_rect))
+			return false;
+
+		MONITORINFO monitor_info{};
+		monitor_info.cbSize = sizeof(monitor_info);
+		const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+		if (!monitor || !GetMonitorInfo(monitor, &monitor_info))
+			return false;
+
+		const RECT& monitor_rect = monitor_info.rcMonitor;
+		const int dx = std::abs(window_rect.left - monitor_rect.left) + std::abs(window_rect.right - monitor_rect.right);
+		const int dy = std::abs(window_rect.top - monitor_rect.top) + std::abs(window_rect.bottom - monitor_rect.bottom);
+		return dx <= 4 && dy <= 4;
+	}
+
 	struct GdiOverlayWindow {
 		HWND hwnd = nullptr;
 		WNDCLASSEXA wc{};
 		HDC buffer_dc = nullptr;
 		HBITMAP buffer_bitmap = nullptr;
 		HGDIOBJ old_bitmap = nullptr;
+		uint32_t* buffer_bits = nullptr;
 		int x = 0;
 		int y = 0;
 		int width = 1;
@@ -140,13 +162,6 @@ namespace {
 
 			if (!hwnd)
 				return false;
-
-			if (!SetLayeredWindowAttributes(hwnd, kOverlayTransparencyKey, 0, LWA_COLORKEY)) {
-				LOGF(WARNING, "Compatibility overlay failed to set color key layered attributes, error {}", GetLastError());
-			}
-			else {
-				fallback_layered_attributes_ready = true;
-			}
 
 			ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 			UpdateWindow(hwnd);
@@ -185,13 +200,12 @@ namespace {
 			bmi.bmiHeader.biBitCount = 32;
 			bmi.bmiHeader.biCompression = BI_RGB;
 
-			void* bits = nullptr;
 			HDC screen_dc = GetDC(nullptr);
 			buffer_dc = CreateCompatibleDC(screen_dc);
-			buffer_bitmap = CreateDIBSection(screen_dc, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
+			buffer_bitmap = CreateDIBSection(screen_dc, &bmi, DIB_RGB_COLORS, reinterpret_cast<void**>(&buffer_bits), nullptr, 0);
 			ReleaseDC(nullptr, screen_dc);
 
-			if (!buffer_dc || !buffer_bitmap)
+			if (!buffer_dc || !buffer_bitmap || !buffer_bits)
 				return false;
 
 			old_bitmap = SelectObject(buffer_dc, buffer_bitmap);
@@ -211,6 +225,8 @@ namespace {
 				DeleteObject(buffer_bitmap);
 				buffer_bitmap = nullptr;
 			}
+
+			buffer_bits = nullptr;
 
 			if (buffer_dc) {
 				DeleteDC(buffer_dc);
@@ -232,12 +248,23 @@ namespace {
 				return;
 
 			if (use_update_layered_window) {
+				const uint32_t transparent = kOverlayTransparencyKey & 0x00FFFFFF;
+				const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+				for (size_t i = 0; i < pixels; ++i) {
+					const uint32_t rgb = buffer_bits[i] & 0x00FFFFFF;
+					if (rgb == transparent)
+						buffer_bits[i] = 0x00000000;
+					else
+						buffer_bits[i] = 0xFF000000 | rgb;
+				}
+
 				POINT dst{ x, y };
 				POINT src{ 0, 0 };
 				SIZE size{ width, height };
 				BLENDFUNCTION blend{};
 				blend.BlendOp = AC_SRC_OVER;
 				blend.SourceConstantAlpha = 255;
+				blend.AlphaFormat = AC_SRC_ALPHA;
 
 				if (UpdateLayeredWindow(
 					hwnd,
@@ -246,9 +273,9 @@ namespace {
 					&size,
 					buffer_dc,
 					&src,
-					kOverlayTransparencyKey,
+					0,
 					&blend,
-					ULW_COLORKEY
+					ULW_ALPHA
 				)) {
 					return;
 				}
@@ -873,12 +900,14 @@ namespace {
 			}
 
 			const HWND foreground = GetForegroundWindow();
+			const bool fullscreen_like = IsFullscreenLike(game_window);
 			focused = ForegroundBelongsToProcess(foreground, process->pid_)
+				|| fullscreen_like
 				|| foreground == overlay.hwnd
 				|| (open && foreground == menu.Hwnd());
 
 			if (open)
-				focused = true;
+				focused = false;
 
 			overlay.SetVisible(focused);
 
