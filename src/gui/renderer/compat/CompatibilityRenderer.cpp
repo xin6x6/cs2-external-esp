@@ -110,6 +110,8 @@ namespace {
 		int width = 1;
 		int height = 1;
 		bool visible = true;
+		bool use_update_layered_window = true;
+		bool fallback_layered_attributes_ready = false;
 
 		bool Init()
 		{
@@ -138,6 +140,13 @@ namespace {
 
 			if (!hwnd)
 				return false;
+
+			if (!SetLayeredWindowAttributes(hwnd, kOverlayTransparencyKey, 0, LWA_COLORKEY)) {
+				LOGF(WARNING, "Compatibility overlay failed to set color key layered attributes, error {}", GetLastError());
+			}
+			else {
+				fallback_layered_attributes_ready = true;
+			}
 
 			ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 			UpdateWindow(hwnd);
@@ -222,24 +231,39 @@ namespace {
 			if (!visible || !hwnd || !buffer_dc)
 				return;
 
-			POINT dst{ x, y };
-			POINT src{ 0, 0 };
-			SIZE size{ width, height };
-			BLENDFUNCTION blend{};
-			blend.BlendOp = AC_SRC_OVER;
-			blend.SourceConstantAlpha = 255;
+			if (use_update_layered_window) {
+				POINT dst{ x, y };
+				POINT src{ 0, 0 };
+				SIZE size{ width, height };
+				BLENDFUNCTION blend{};
+				blend.BlendOp = AC_SRC_OVER;
+				blend.SourceConstantAlpha = 255;
 
-			UpdateLayeredWindow(
-				hwnd,
-				nullptr,
-				&dst,
-				&size,
-				buffer_dc,
-				&src,
-				kOverlayTransparencyKey,
-				&blend,
-				ULW_COLORKEY
-			);
+				if (UpdateLayeredWindow(
+					hwnd,
+					nullptr,
+					&dst,
+					&size,
+					buffer_dc,
+					&src,
+					kOverlayTransparencyKey,
+					&blend,
+					ULW_COLORKEY
+				)) {
+					return;
+				}
+
+				use_update_layered_window = false;
+				LOGF(WARNING, "UpdateLayeredWindow failed for compatibility overlay, falling back to BitBlt path, error {}", GetLastError());
+
+				if (!fallback_layered_attributes_ready) {
+					fallback_layered_attributes_ready = SetLayeredWindowAttributes(hwnd, kOverlayTransparencyKey, 0, LWA_COLORKEY) != FALSE;
+				}
+			}
+
+			HDC window_dc = GetDC(hwnd);
+			BitBlt(window_dc, 0, 0, width, height, buffer_dc, 0, 0, SRCCOPY);
+			ReleaseDC(hwnd, window_dc);
 		}
 
 		void SetVisible(bool state)
@@ -875,6 +899,9 @@ namespace {
 			focused = ForegroundBelongsToProcess(foreground, process->pid_)
 				|| foreground == overlay.hwnd
 				|| (open && foreground == menu.Hwnd());
+
+			if (open)
+				focused = true;
 
 			overlay.SetVisible(focused);
 
